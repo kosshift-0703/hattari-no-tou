@@ -93,14 +93,37 @@ input { font: inherit; color: var(--ink); background: rgba(0,0,0,.3); border: 1p
 .stamp div small { display: block; font-family: var(--f-body); font-size: 15px; font-weight: 700; letter-spacing: .04em; }
 .stamp.on div { transform: rotate(-8deg) scale(1); opacity: 1; }
 .side { display: grid; gap: 14px; min-width: 0; }
-.seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 8px; }
 .seat { background: var(--wood); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 2px; position: relative; }
 .seat.turn { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .seat .nm { display: flex; align-items: center; gap: 6px; font-weight: 700; min-width: 0; }
 .seat .nm span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seat .sc { font-family: var(--f-display); font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.seat .sc small { font-family: var(--f-body); font-size: 12px; color: var(--muted); margin-left: 4px; }
-.seat .left { font-size: 12px; color: var(--muted); }
+.goal { font-size: 12.5px; color: var(--muted); background: rgba(0,0,0,.2); border-radius: 8px; padding: 6px 10px; }
+.seat { gap: 6px; }
+.seat .tag.now { color: var(--accent-ink); background: var(--accent); border-color: transparent; }
+.seat .tot { display: flex; align-items: baseline; gap: 4px; }
+.seat .tot .k { font-size: 11px; color: var(--muted); letter-spacing: .1em; }
+.seat .tot b { font-family: var(--f-display); font-weight: normal; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.seat .tot .u { font-size: 12px; color: var(--muted); }
+.seat .tot .rank { margin-left: auto; font-family: var(--f-display); font-size: 13px; color: var(--accent); }
+.seat .rp { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; align-items: center; font-size: 11px; color: var(--muted); line-height: 1.3; border-top: 1px dashed var(--line); padding-top: 6px; }
+.seat .rp b { font-family: var(--f-display); font-weight: normal; font-size: 15px; color: var(--ok); border: 1px dashed currentColor; border-radius: 6px; padding: 0 6px; font-variant-numeric: tabular-nums; }
+.seat .rp.neg b { color: var(--danger); }
+.seat .rp.done b { border-style: solid; }
+.seat .handleft { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.seat .pips { display: inline-flex; gap: 3px; }
+.seat .pips i { width: 9px; height: 7px; border-radius: 2px; background: rgba(244,234,220,.12); }
+.seat .pips i.on { background: var(--ink); opacity: .8; }
+.seat .handleft .n { margin-left: auto; }
+@media (max-width: 520px) {
+  .seats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .seat { padding: 8px; }
+  .seat .tot b { font-size: 22px; }
+  .seat .rp { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .seat .rp b { justify-self: start; }
+  .seat .rp span { font-size: 10px; }
+  .seat .handleft .n { display: none; }
+}
 .act { background: var(--wood); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
 .act h3 { margin: 0; font-family: var(--f-display); font-weight: normal; font-size: 20px; }
 .lbl { font-size: 12px; letter-spacing: .1em; color: var(--muted); }
@@ -231,6 +254,7 @@ input { font: inherit; color: var(--ink); background: rgba(0,0,0,.3); border: 1p
       </div>
       <div class="side">
         <div class="err" id="netErr"></div>
+        <div class="goal" id="goal"></div>
         <div class="seats" id="seats"></div>
         <div class="act" id="act"></div>
         <ol class="log" id="log"></ol>
@@ -452,17 +476,41 @@ function render() {
   else if (lastSeq < 0) lastSeq = st.seq;
   $('gDecl').textContent = shownTotal(st);
   $('gLimit').textContent = st.reveal ? st.reveal.L : '？';
+  $('goal').textContent = st.phase === 'end' ? '3 ラウンド終了。合計点がいちばん多い人の勝ち' : `ラウンド ${st.round} / ${ROUNDS}　・　3 ラウンド後の「合計」がいちばん多い人の勝ち`;
   const seats = $('seats'); seats.innerHTML = '';
+  const ranks = st.order.map(u => 1 + st.order.filter(o => st.scores[o] > st.scores[u]).length);
+  const anyScore = st.order.some(u => st.scores[u] !== 0);
   st.order.forEach((u, i) => {
     const d = el('div', 'seat' + (st.phase === 'play' && st.turn === i ? ' turn' : ''));
     const n1 = el('div', 'nm'); const dot = el('i', 'dot'); dot.style.background = COLORS[i % COLORS.length];
     n1.append(dot, el('span', '', nm(st, u)));
     if (mode === 'online' && u === myPid) n1.append(el('span', 'tag', 'あなた'));
     if (mode === 'online' && role === 'host' && u !== myPid && !conns.has(u)) n1.append(el('span', 'tag', '切断'));
-    const sc = el('div', 'sc', st.scores[u]);
-    const g = st.phase === 'play' ? st.roundScores[u] : st.reveal ? st.reveal.gained[u] : null;
-    if (g !== null && st.phase !== 'end') sc.append(el('small', '', `この回 ${g >= 0 ? '+' : ''}${g}`));
-    d.append(n1, sc, el('div', 'left', st.phase === 'play' ? `残り ${st.secret.hands[u].length} 個` : '')); seats.append(d);
+    if (st.phase === 'play' && st.turn === i) n1.append(el('span', 'tag now', '手番'));
+    // 合計（勝敗を決める数字）
+    const tot = el('div', 'tot');
+    tot.append(el('span', 'k', '合計'), el('b', '', st.scores[u]), el('span', 'u', '点'));
+    if (anyScore) tot.append(el('span', 'rank', `${ranks[i]}位`));
+    d.append(n1, tot);
+    // このラウンドの点
+    if (st.phase === 'play') {
+      const g = st.roundScores[u];
+      const rp = el('div', 'rp' + (g < 0 ? ' neg' : ''));
+      rp.append(el('b', '', `${g >= 0 ? '+' : ''}${g}`), el('span', '', 'このラウンドで稼いだ点。崩れずに終われば合計に入る'));
+      d.append(rp);
+      // 手札の残り（四角で見せる）
+      const left = st.secret.hands[u].length, hd = el('div', 'handleft');
+      hd.append(el('span', 'k', '手札'));
+      const pips = el('span', 'pips'); for (let k = 0; k < HAND.length; k++) pips.append(el('i', k < left ? 'on' : ''));
+      hd.append(pips, el('span', 'n', left ? `あと ${left} 個` : 'もう無い'));
+      d.append(hd);
+    } else if (st.reveal && st.phase !== 'end') {
+      const g = st.reveal.gained[u];
+      const rp = el('div', 'rp done' + (g < 0 ? ' neg' : ''));
+      rp.append(el('b', '', `${g >= 0 ? '+' : ''}${g}`), el('span', '', u === st.reveal.collapser ? '塔を崩したので −5' : 'このラウンドで合計に入った'));
+      d.append(rp);
+    }
+    seats.append(d);
   });
   const log = $('log'); log.innerHTML = '';
   for (const s of st.log || []) log.append(el('li', '', s));
